@@ -14,7 +14,14 @@ fn main() {
         (
             "Acquire{Drm0}".into(),
             serialize(&ClientRequest::Acquire {
-                resource: Resource::Drm { card: 0 },
+                resource: Resource::drm(0),
+            })
+            .unwrap(),
+        ),
+        (
+            "Acquire{Drm0 overlay}".into(),
+            serialize(&ClientRequest::Acquire {
+                resource: Resource::drm_overlay(0),
             })
             .unwrap(),
         ),
@@ -28,7 +35,7 @@ fn main() {
         (
             "Release{Drm0}".into(),
             serialize(&ClientRequest::Release {
-                resource: Resource::Drm { card: 0 },
+                resource: Resource::drm(0),
             })
             .unwrap(),
         ),
@@ -37,7 +44,7 @@ fn main() {
             "Advertise{[Drm0,Fbdev]}".into(),
             serialize(&ServerMessage::Advertise {
                 available_resources: vec![
-                    Resource::Drm { card: 0 },
+                    Resource::drm(0),
                     Resource::Fbdev,
                     Resource::Input(InputResource::Mouse(0)),
                 ],
@@ -47,14 +54,14 @@ fn main() {
         (
             "Grant{Drm0}".into(),
             serialize(&ServerMessage::Grant {
-                resource: Resource::Drm { card: 0 },
+                resource: Resource::drm(0),
             })
             .unwrap(),
         ),
         (
             "Revoke{Drm0}".into(),
             serialize(&ServerMessage::Revoke {
-                resource: Resource::Drm { card: 0 },
+                resource: Resource::drm(0),
             })
             .unwrap(),
         ),
@@ -81,7 +88,7 @@ fn main() {
 
     // Sanity: serialize_framed produces the same bytes as manual framing.
     let framed = serialize_framed(&ServerMessage::Grant {
-        resource: Resource::Drm { card: 0 },
+        resource: Resource::drm(0),
     })
     .unwrap();
     let mut manual = Vec::with_capacity(4 + cases[6].1.len());
