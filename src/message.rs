@@ -17,10 +17,34 @@ pub enum PlaneRole {
     /// The plane the display's owner scanouts through: the app on screen.
     #[default]
     Primary,
-    /// One of the pipeline's overlay planes: hardware compositing on top of
-    /// the primary, for a client that draws over somebody else's output.
-    /// Not granted yet — a request for one is refused for the moment.
+    /// One of the pipeline's overlay planes: hardware compositing, stacked
+    /// above the primary, for a client that draws over somebody else's output
+    /// or that wants a second plane of its own. A client that asks for one
+    /// owns it until it releases the resource.
     Overlay,
+}
+
+/// What the server chose for a granted DRM plane role: the objects the client
+/// is expected to program.
+///
+/// A primary grant hands over a pipeline — the client programs the mode on the
+/// CRTC and draws through the primary plane. An overlay grant names one of that
+/// pipeline's overlay planes, already stacked above the primary, which the
+/// client drives with its own framebuffers.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub struct DrmGrant {
+    /// Which role was granted — the plane the client may draw on.
+    pub plane: PlaneRole,
+    /// The plane's kernel object id (`drmModeSetPlane`, or the `plane_id` of an
+    /// atomic request).
+    pub plane_id: u32,
+    /// The CRTC that plane drives: the pipeline's, whose mode the primary
+    /// client set. A plane commit needs this, never the connector.
+    pub crtc_id: u32,
+    /// The connector that CRTC drives, when it is known — informational, so a
+    /// client can see which display it ended up on.
+    #[serde(default)]
+    pub connector_id: Option<u32>,
 }
 
 /// A resource that can be managed by the server, grouped by kind.
@@ -112,6 +136,11 @@ pub enum ServerMessage {
     Grant {
         /// The resource granted for the client, with one fd.
         resource: Resource,
+        /// For a DRM resource: which plane the server chose. A grant written
+        /// before this field existed decodes as `None`, and a client that does
+        /// not know it can still enumerate the planes in its lease.
+        #[serde(default)]
+        drm: Option<DrmGrant>,
     },
     /// Denies the client's request.
     Deny {
@@ -166,5 +195,56 @@ mod tests {
         // roles must not collide on a card.
         assert_ne!(Resource::drm(0), Resource::drm_overlay(0));
         assert_eq!(Resource::drm(0), Resource::drm(0));
+    }
+
+    /// The shape a server wrote before the plane detail existed: the same
+    /// variant, with only the resource.
+    #[derive(Serialize)]
+    enum GrantBeforePlaneDetail {
+        Grant { resource: Resource },
+    }
+
+    #[test]
+    fn a_grant_without_plane_detail_is_readable() {
+        let bytes = serialize(&GrantBeforePlaneDetail::Grant {
+            resource: Resource::drm(0),
+        })
+        .unwrap();
+        assert_eq!(
+            deserialize::<ServerMessage>(&bytes).unwrap(),
+            ServerMessage::Grant {
+                resource: Resource::drm(0),
+                drm: None,
+            }
+        );
+    }
+
+    #[test]
+    fn an_overlay_grant_names_the_plane_to_draw_on() {
+        let grant = DrmGrant {
+            plane: PlaneRole::Overlay,
+            plane_id: 44,
+            crtc_id: 48,
+            connector_id: Some(50),
+        };
+        let message = ServerMessage::Grant {
+            resource: Resource::drm_overlay(0),
+            drm: Some(grant),
+        };
+        let bytes = serialize(&message).unwrap();
+        assert_eq!(deserialize::<ServerMessage>(&bytes).unwrap(), message);
+        assert_ne!(grant.plane, PlaneRole::Primary);
+    }
+
+    #[test]
+    fn a_grant_whose_connector_is_unknown_round_trips() {
+        let grant = DrmGrant {
+            plane: PlaneRole::Primary,
+            plane_id: 40,
+            crtc_id: 48,
+            connector_id: None,
+        };
+        let bytes = serialize(&grant).unwrap();
+        assert_eq!(deserialize::<DrmGrant>(&bytes).unwrap(), grant);
     }
 }

@@ -1,5 +1,6 @@
 use simple_graphics_protocol::{
-    ClientRequest, InputResource, Resource, ServerMessage, serialize, serialize_framed,
+    ClientRequest, DrmGrant, InputResource, PlaneRole, Resource, ServerMessage, serialize,
+    serialize_framed,
 };
 
 fn main() {
@@ -52,9 +53,28 @@ fn main() {
             .unwrap(),
         ),
         (
-            "Grant{Drm0}".into(),
+            "Grant{Drm0 primary}".into(),
             serialize(&ServerMessage::Grant {
                 resource: Resource::drm(0),
+                drm: Some(DrmGrant {
+                    plane: PlaneRole::Primary,
+                    plane_id: 40,
+                    crtc_id: 48,
+                    connector_id: Some(50),
+                }),
+            })
+            .unwrap(),
+        ),
+        (
+            "Grant{Drm0 overlay}".into(),
+            serialize(&ServerMessage::Grant {
+                resource: Resource::drm_overlay(0),
+                drm: Some(DrmGrant {
+                    plane: PlaneRole::Overlay,
+                    plane_id: 44,
+                    crtc_id: 48,
+                    connector_id: Some(50),
+                }),
             })
             .unwrap(),
         ),
@@ -87,13 +107,25 @@ fn main() {
     }
 
     // Sanity: serialize_framed produces the same bytes as manual framing.
+    // The same message the "Grant{Drm0 primary}" case holds.
     let framed = serialize_framed(&ServerMessage::Grant {
         resource: Resource::drm(0),
+        drm: Some(DrmGrant {
+            plane: PlaneRole::Primary,
+            plane_id: 40,
+            crtc_id: 48,
+            connector_id: Some(50),
+        }),
     })
     .unwrap();
-    let mut manual = Vec::with_capacity(4 + cases[6].1.len());
-    manual.extend_from_slice(&(cases[6].1.len() as u32).to_be_bytes());
-    manual.extend_from_slice(&cases[6].1);
+    // Look the case up by name: an index here drifts the moment a case is added.
+    let grant = cases
+        .iter()
+        .find(|(name, _)| name == "Grant{Drm0 primary}")
+        .expect("the grant case");
+    let mut manual = Vec::with_capacity(4 + grant.1.len());
+    manual.extend_from_slice(&(grant.1.len() as u32).to_be_bytes());
+    manual.extend_from_slice(&grant.1);
     assert_eq!(framed, manual);
     println!("serialize_framed matches manual framing: yes");
 }
