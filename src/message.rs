@@ -24,6 +24,50 @@ pub enum PlaneRole {
     Overlay,
 }
 
+/// The shape the pointer takes, as the server's cursor renderer draws it.
+///
+/// Named, not pixels: the shape set and its artwork belong to the graphics
+/// controller, so every application and every toolkit looks the same. A client
+/// says *which* shape, never what it looks like.
+///
+/// The discriminants are the wire format — new shapes are appended, never
+/// renumbered, and a decoder that does not know one draws [`CursorShape::Default`].
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[repr(u8)]
+pub enum CursorShape {
+    /// The ordinary pointer: what to use when nothing else applies.
+    #[default]
+    Default = 0,
+    /// Over text the user can select or type into.
+    Text = 1,
+    /// Over something clickable: a button, a link.
+    Pointer = 2,
+    /// A precise position: drawing, aiming, cropping.
+    Crosshair = 3,
+    /// Something being dragged or repositioned.
+    Move = 4,
+    /// A vertical split or frame edge.
+    ResizeVertical = 5,
+    /// A horizontal split or frame edge.
+    ResizeHorizontal = 6,
+    /// The top-left / bottom-right diagonal.
+    ResizeTopLeft = 7,
+    /// The top-right / bottom-left diagonal.
+    ResizeTopRight = 8,
+    /// Working, nothing to click.
+    Wait = 9,
+    /// Working, but the application still responds.
+    Progress = 10,
+    /// Not allowed here: a forbidden drop, a disabled control.
+    NotAllowed = 11,
+    /// Context help is available.
+    Help = 12,
+    /// Something can be dragged from where the pointer is (an open hand).
+    Grab = 13,
+    /// Something is being dragged (the hand closed).
+    Grabbing = 14,
+}
+
 /// What the server chose for a granted DRM plane role: the objects the client
 /// is expected to program.
 ///
@@ -117,6 +161,22 @@ pub enum ClientRequest {
     /// granting; without it the server cannot tell a delivered grant from a
     /// lost one.
     Ack,
+    /// Which shape the cursor takes, and whether it is shown at all.
+    ///
+    /// Sent on change only — a shape that did not change is not re-sent with
+    /// every pointer motion, because the graphics controller owns the position
+    /// and draws the cursor itself. `visible: false` is how an application
+    /// that draws its own crosshair or brush hides the system cursor and puts
+    /// its own mark in its content.
+    ///
+    /// Only the focused application's shape is honoured: a background window
+    /// cannot change the pointer the user is looking at.
+    CursorShape {
+        /// The shape to draw.
+        shape: CursorShape,
+        /// Whether the cursor is shown.
+        visible: bool,
+    },
     /// Where this client's overlay is, or that it is hidden (all zeros). Sent
     /// when the geometry is known and whenever it changes: the daemon records
     /// it, so a stacking or focus policy can say which app is where without
@@ -208,6 +268,25 @@ mod tests {
     }
 
     #[test]
+    fn a_cursor_shape_round_trips_and_keeps_its_wire_numbers() {
+        let request = ClientRequest::CursorShape {
+            shape: CursorShape::Text,
+            visible: true,
+        };
+        let decoded: ClientRequest = deserialize(&serialize(&request).unwrap()).unwrap();
+        assert_eq!(decoded, request);
+        // The numbers are the wire format: a decoder from another build must
+        // agree, so they are asserted, not implied by declaration order.
+        assert_eq!(CursorShape::Default as u8, 0);
+        assert_eq!(CursorShape::Text as u8, 1);
+        assert_eq!(CursorShape::Pointer as u8, 2);
+        assert_eq!(CursorShape::Help as u8, 12);
+        assert_eq!(CursorShape::Grab as u8, 13);
+        assert_eq!(CursorShape::Grabbing as u8, 14);
+        assert_eq!(CursorShape::default(), CursorShape::Default);
+    }
+
+    #[test]
     fn an_overlay_geometry_round_trips_and_defaults_to_hidden() {
         let geometry = OverlayGeometry {
             x: 523,
@@ -215,13 +294,14 @@ mod tests {
             width: 320,
             height: 240,
         };
-        let decoded: ClientRequest =
-            deserialize(&serialize(&ClientRequest::OverlayGeometry {
+        let decoded: ClientRequest = deserialize(
+            &serialize(&ClientRequest::OverlayGeometry {
                 resource: Resource::drm_overlay(0),
                 geometry,
             })
-            .unwrap())
-            .unwrap();
+            .unwrap(),
+        )
+        .unwrap();
         assert_eq!(
             decoded,
             ClientRequest::OverlayGeometry {
