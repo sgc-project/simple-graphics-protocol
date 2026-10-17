@@ -117,6 +117,46 @@ pub enum ClientRequest {
     /// granting; without it the server cannot tell a delivered grant from a
     /// lost one.
     Ack,
+    /// Where this client's overlay is, or that it is hidden (all zeros). Sent
+    /// when the geometry is known and whenever it changes: the daemon records
+    /// it, so a stacking or focus policy can say which app is where without
+    /// guessing from a plane state that only reflects the last commit.
+    ///
+    /// Only meaningful for an overlay grant; the app on the display owns the
+    /// whole screen and has no geometry to report.
+    OverlayGeometry {
+        /// The overlay resource the geometry belongs to (its card is what makes
+        /// the grant unique).
+        resource: Resource,
+        /// The reported rectangle, or the hidden marker.
+        geometry: OverlayGeometry,
+    },
+}
+
+/// Where a client's overlay sits on the screen, in CRTC pixels.
+///
+/// The daemon can read a plane's programmed rectangle from the kernel, but that
+/// only says where the last commit put it — not whether the client considers
+/// itself visible. `OverlayGeometry::default()` (all zeros) means hidden: the
+/// plane is cleared and the client keeps its grant.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub struct OverlayGeometry {
+    /// The plane's left edge in CRTC coordinates.
+    pub x: i32,
+    /// The plane's top edge in CRTC coordinates.
+    pub y: i32,
+    /// The plane's width in pixels (its buffer's width: a plane is 1:1).
+    pub width: u32,
+    /// The plane's height in pixels.
+    pub height: u32,
+}
+
+impl OverlayGeometry {
+    /// Whether the client is reporting itself hidden: a zero-sized window is
+    /// not a window, so no visible geometry can map to this.
+    pub fn is_hidden(&self) -> bool {
+        self.width == 0 || self.height == 0
+    }
 }
 
 /// A message sent from the server to a client.
@@ -165,6 +205,33 @@ mod tests {
     #[derive(Serialize)]
     enum ResourceBeforeRoles {
         Drm { card: u8 },
+    }
+
+    #[test]
+    fn an_overlay_geometry_round_trips_and_defaults_to_hidden() {
+        let geometry = OverlayGeometry {
+            x: 523,
+            y: 264,
+            width: 320,
+            height: 240,
+        };
+        let decoded: ClientRequest =
+            deserialize(&serialize(&ClientRequest::OverlayGeometry {
+                resource: Resource::drm_overlay(0),
+                geometry,
+            })
+            .unwrap())
+            .unwrap();
+        assert_eq!(
+            decoded,
+            ClientRequest::OverlayGeometry {
+                resource: Resource::drm_overlay(0),
+                geometry,
+            }
+        );
+        // The zero value is the hidden marker, not a valid window.
+        assert!(OverlayGeometry::default().is_hidden());
+        assert!(!geometry.is_hidden());
     }
 
     #[test]

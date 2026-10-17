@@ -3,7 +3,7 @@
 pub mod message;
 pub mod serialization;
 
-pub use message::{ClientRequest, DrmGrant, InputResource, PlaneRole, Resource, ServerMessage};
+pub use message::{ClientRequest, DrmGrant, InputResource, PlaneRole, Resource, ServerMessage, OverlayGeometry};
 pub use serialization::{
     FRAME_HEADER_LEN, MAX_FRAME_PAYLOAD, ProtocolError, deserialize, parse_frame_header, serialize,
     serialize_framed,
