@@ -252,6 +252,21 @@ pub enum ServerMessage {
         /// The resource the client must release.
         resource: Resource,
     },
+    /// Where the controller's pointer is, in display pixels.
+    ///
+    /// Sent to the app on the display — the only client that acts on hover — on
+    /// change. This is the controller's position, already clamped to the mode,
+    /// and it exists because there must be exactly one integrator: an app that
+    /// summed `EV_REL` itself would clamp at an edge its own way and lose a
+    /// different amount of delta than the cursor did, leaving the two pointers
+    /// permanently apart. An app that reads `Pointer` cannot drift, because it
+    /// is not integrating anything.
+    Pointer {
+        /// Horizontal position, in display pixels, clamped to the mode.
+        x: i32,
+        /// Vertical position, in display pixels, clamped to the mode.
+        y: i32,
+    },
 }
 
 #[cfg(test)]
@@ -265,6 +280,14 @@ mod tests {
     #[derive(Serialize)]
     enum ResourceBeforeRoles {
         Drm { card: u8 },
+    }
+
+    #[test]
+    fn a_pointer_position_round_trips() {
+        let message = ServerMessage::Pointer { x: 1365, y: 0 };
+        let bytes = serialize(&message).expect("serialize");
+        let back: ServerMessage = deserialize(&bytes).expect("deserialize");
+        assert!(matches!(back, ServerMessage::Pointer { x: 1365, y: 0 }));
     }
 
     #[test]
